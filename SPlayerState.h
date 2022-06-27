@@ -69,8 +69,17 @@ public:
 	//find the space the player was on when returning to the board level
 	void AssignPlayerSpace();
 
+	//set/get the player's reference to the current game turn number
 	void SetPlayerTurnNum(int8 PlayerTurn) { PlayerTurnNum = PlayerTurn; };
 	int8 ReturnPlayerTurnNum() { return PlayerTurnNum; };
+
+	//set/get whether this player is involved in the duel
+	void SetIsInDuel(bool DuelChoice) { IsInDuel = DuelChoice; };
+	bool ReturnIsInDuel() { return IsInDuel; };
+
+	//set/get if this player has won the duel
+	void SetIsDuelWinner(bool DuelWinner) { IsDuelWinner = DuelWinner; };
+	bool ReturnIsDuelWinner() { return IsDuelWinner; };
 
 private:
 
@@ -87,7 +96,7 @@ private:
 	UPROPERTY(Replicated, VisibleAnywhere)
 	APawn* PlayerPawn;
 
-	UPROPERTY(VisibleAnywhere, Meta = (HideAlphaChannel = true))
+	UPROPERTY(Replicated, VisibleAnywhere, Meta = (HideAlphaChannel = true))
 	FLinearColor PlayerColor;
 
 	UPROPERTY(Replicated)
@@ -95,6 +104,12 @@ private:
 
 	UPROPERTY(Replicated)
 	bool IsMyTurn = false;
+
+	UPROPERTY(Replicated)
+	bool IsInDuel = false;
+
+	UPROPERTY(Replicated)
+	bool IsDuelWinner = false;
 
 	UPROPERTY(Replicated)
 	int NumOfTurns = 45;

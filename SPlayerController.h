@@ -51,6 +51,10 @@ public:
 	UFUNCTION(Client, Reliable)
 	void CreateManagerWidget(const TArray<FLinearColor>& WidgetColors);
 
+	//remove all active widgets from the viewport
+	UFUNCTION(Client, Reliable)
+	void RemoveAllWidgets();	
+
 	//have each client receive information to update the widget individually
 	UFUNCTION(Client, Reliable)
 	void UpdateTurnWidget(int TurnCount, const FString& PlayerTurn, int Whatever);
@@ -82,6 +86,10 @@ public:
 	UFUNCTION(Server, Reliable)
 	void UpdateScoreFromGamblerSpace(int AmountToUpdate);
 
+	//update widget text with text/color of duel choices
+	UFUNCTION(Client, Reliable)
+	void AddPlayersToDuelWidget(const FString& B1, FLinearColor C1, const FString& B2, FLinearColor C2, const FString& B3, FLinearColor C3);
+
 	//the following methods are server RPCs called from client computers
 	UFUNCTION(Server, Reliable)
 	void SunWidgetCompleted();
@@ -95,6 +103,12 @@ public:
 	void SunScalePassToGS();
 	UFUNCTION(Server, Reliable)
 	void TOCardChosen(const FString& ChosenCard);
+	UFUNCTION(Server, Reliable)
+	void CallDuelUpdate();
+	UFUNCTION(Server, Reliable)
+	void DuelChoicesPassToGS(const FString& Choice1, const FString& Choice2);
+	UFUNCTION(Server, Reliable)
+	void SetPlayerToDumpSpace();
 
 private:
 
@@ -104,6 +118,7 @@ private:
 	class UInGameWidget* InGameWidget;
 	class USScoreWidget* ScoreWidget;
 	class USWinWidget* WinWidget;
+	class USDuelChoice* DuelWidget;
 
 	//player pawn
 	APawn* PlayerPawn;

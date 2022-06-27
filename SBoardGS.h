@@ -26,9 +26,15 @@ public:
 	//bool to check if the game is in initial setup or is returning from a level transition
 	bool ReturnPostMinigame() { return ReturningFromMinigame; };
 
+	bool ReturnPostDuel() { return ReturningFromDuel; };
+
 	//Spawn the cards on both the server and client
 	UFUNCTION(NetMultiCast, Reliable)
 	void CardSpawning(const FString &C1, const FString &C2, const FString &C3, const FString &P1, const FString &P2, const FString &P3);
+
+	//spawn the reward cards for the duel winner
+	UFUNCTION(NetMultiCast, Reliable)
+	void SpawnDuelWinCards();
 
 	//receive the function call from player controller to update cards on all clients and server
 	UFUNCTION(NetMultiCast, Reliable)
@@ -90,6 +96,23 @@ public:
 	void SetIsOnWormhole(bool OnWormhole) { IsOnWormhole = OnWormhole; };
 	bool ReturnIsOnWormhole() { return IsOnWormhole; };
 
+	//update the widget with the player's duel choices
+	void UpdateDuelWidget();
+
+	//update the players involved in the duel and prepare to move to 2player duel
+	void UpdateDuelChoices(FString Choice1, FString Choice2);
+	
+	//bool to check if a player has both initiated and won a duel
+	UPROPERTY(Replicated)
+	bool BringInDuelWinCards = false;
+
+	//remove all widgets, used in preparation for level transition
+	UFUNCTION(NetMultiCast, Reliable)
+	void RemoveClientWidgets();
+
+	//set the pawn's board space and lane number to the first dump space
+	void SetPawnAtDump();
+
 private:
 
 	//tracker for how many turns are left in the game
@@ -140,6 +163,9 @@ private:
 	//bool to track if the game is in initial setup or is returning from a level transition
 	UPROPERTY(Replicated)
 	bool ReturningFromMinigame = false;
+
+	UPROPERTY(Replicated)
+	bool ReturningFromDuel = false;
 
 	//method to return the game to its previous setup after returning from a level transition
 	void PostMinigameSetup();

@@ -60,6 +60,9 @@ protected:
 	//allows a delay before moving the next player's turn
 	void NextTurn();
 
+	UPROPERTY(VisibleDefaultsOnly, Category = "Space\|Components")
+	UStaticMeshComponent* StaticMeshComp;
+
 public:	
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -109,9 +112,6 @@ private:
 	//Scene Components for the space
 	UPROPERTY(VisibleDefaultsOnly, Category = "Space\|Components")
 	USceneComponent* SceneComp;
-
-	UPROPERTY(VisibleDefaultsOnly, Category = "Space\|Components")
-	UStaticMeshComponent* StaticMeshComp;
 
 	UPROPERTY(VisibleDefaultsOnly, Category = "Space\|Components")
 	class USpringArmComponent* SpringArm;

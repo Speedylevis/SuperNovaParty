@@ -14,8 +14,6 @@ class COLLABTUT_API USGambleWidget : public UUserWidget
 {
 	GENERATED_BODY()
 	
-public:
-
 protected:
 	//initialize method for button implementation
 	virtual bool Initialize();

@@ -19,5 +19,9 @@ public:
 	//Call seamless travel to move to the 4player minigame level
 	UFUNCTION(BlueprintCallable)
 	void MoveToMinigame();
+	
+	//Call seamless travel to move to the 2player duel level
+	UFUNCTION(BlueprintCallable)
+	void MoveToDuel();
 
 };

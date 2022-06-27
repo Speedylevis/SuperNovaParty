@@ -13,37 +13,35 @@ UCLASS()
 class COLLABTUT_API ASDuelSpace : public ASSpace
 {
 	GENERATED_BODY()
-	
+
 public:
+
 	ASDuelSpace();
 
-protected:
-
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-
-	//TBD: have current player pick an opponent and move them to a 2player minigame
-	void Duel();
-
-public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
 	//Root Component for other components to attach to for this space
 	UPROPERTY(VisibleDefaultsOnly, Category = "Components")
-	USceneComponent* RootComp;
+	USceneComponent* SecondSceneComp;
 
 	//reference variable for the static mesh of the duel space
 	UPROPERTY(BlueprintReadWrite, Category = "Components")
-	UStaticMeshComponent* ShipMesh;
+	UStaticMeshComponent* ShipMeshComp;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Components")
+	UStaticMesh* ShipMesh;
 
 	//randomize the integers that represent to colors to set the ships to
 	void AssignRandomColorNumber();
 	//set the colors of the ships based on the randomized integers
+	UFUNCTION(NetMultiCast, Reliable)
 	void SwitchColor();
 
 	//integers to represent what colors to set the ships of this space
+	UPROPERTY(Replicated)
 	int ColorToSet_1;
+	UPROPERTY(Replicated)
 	int ColorToSet_2;
 
 	//references to the neon materials of the ships
@@ -62,7 +60,14 @@ public:
 	TArray<UMaterialInstance*> NeonArray;
 	TArray<UMaterialInstance*> AluminumArray;
 
-	//time between switching colors of the space
-	UPROPERTY(EditAnywhere, Category = "Color Switching")
-	float ColorSwitchSpeed = 1.0f;
+protected:
+
+	// Called when the game starts or when spawned
+	virtual void BeginPlay() override;
+
+private:
+
+	//have current player pick an opponent and move them to a 2player minigame
+	UFUNCTION(Server, Reliable)
+	void Duel();
 };
