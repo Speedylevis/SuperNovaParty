@@ -54,17 +54,26 @@ void ASBoardGS::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifet
 	DOREPLIFETIME(ASBoardGS, TurnCount);
 	DOREPLIFETIME(ASBoardGS, ReturningFromMinigame);
 	DOREPLIFETIME(ASBoardGS, IsOnWormhole);
+	DOREPLIFETIME(ASBoardGS, ReturningFromDuel);
+	DOREPLIFETIME(ASBoardGS, BringInDuelWinCards);	
 }
 
 //setup for allowing players to pick the turn order
 void ASBoardGS::InitialTurnOrder()
 {
 	ReturningFromMinigame = false;
+	ReturningFromDuel = false;
 
 	//if any of the players have a score, then the game has already been initialized and the players are returning from a level transition
 	for (int i = 0; i < PlayerArray.Num(); ++i)
 	{
 		ASPlayerState* ThisPS = Cast<ASPlayerState>(PlayerArray[i]);
+
+		if (ThisPS->ReturnIsDuelWinner())
+		{
+			ReturningFromDuel = true;
+			break;
+		}
 
 		if (ThisPS->ReturnPlayerScore() != 0)
 		{
@@ -74,10 +83,10 @@ void ASBoardGS::InitialTurnOrder()
 	}
 
 	//if returning from a level transition, ignore InitialSetup and move to PostMinigameSetup
-	if (ReturningFromMinigame)
+	if (ReturningFromMinigame || ReturningFromDuel)
 	{
 		FTimerHandle THandle_PostMinigameSetupCall;
-		GetWorldTimerManager().SetTimer(THandle_PostMinigameSetupCall, this, &ASBoardGS::PostMinigameSetup, 2.0f, false);
+		GetWorldTimerManager().SetTimer(THandle_PostMinigameSetupCall, this, &ASBoardGS::PostMinigameSetup, 5.0f, false);
 		return;
 	}
 
@@ -212,11 +221,18 @@ void ASBoardGS::TOCardChosen_Implementation(const FString& ChosenCard, const FSt
 void ASBoardGS::SkipTurnOrderSetup()
 {
 	ReturningFromMinigame = false;
+	ReturningFromDuel = false;
 
 	//if any of the players have a score, then the game has already been initialized and the players are returning from a level transition
 	for (int i = 0; i < PlayerArray.Num(); ++i)
 	{
 		ASPlayerState* ThisPS = Cast<ASPlayerState>(PlayerArray[i]);
+
+		if (ThisPS->ReturnIsDuelWinner())
+		{
+			ReturningFromDuel = true;
+			break;
+		}
 
 		if (ThisPS->ReturnPlayerScore() != 0)
 		{
@@ -226,10 +242,10 @@ void ASBoardGS::SkipTurnOrderSetup()
 	}
 
 	//if returning from a level transition, ignore InitialSetup and move to PostMinigameSetup
-	if (ReturningFromMinigame)
+	if (ReturningFromMinigame || ReturningFromDuel)
 	{
 		FTimerHandle THandle_PostMinigameSetupCall;
-		GetWorldTimerManager().SetTimer(THandle_PostMinigameSetupCall, this, &ASBoardGS::PostMinigameSetup, 2.0f, false);
+		GetWorldTimerManager().SetTimer(THandle_PostMinigameSetupCall, this, &ASBoardGS::PostMinigameSetup, 5.0f, false);
 		return;
 	}
 
@@ -490,9 +506,38 @@ void ASBoardGS::PostMinigameSetup()
 		ThisPC->CreateManagerWidget(ColorArray);
 	}
 
-	//allow a delay for the board to reset and replicate before moving the next player's turn
-	FTimerHandle THandle_PostMinigameNextTurn;
-	GetWorldTimerManager().SetTimer(THandle_PostMinigameNextTurn, this, &ASBoardGS::NextTurnInOrder, 8.0f, false);
+	if (ReturningFromDuel)
+	{
+		for (int i = 0; i < PlayerArray.Num(); ++i)
+		{
+			ASPlayerState* ThisPS = Cast<ASPlayerState>(PlayerArray[i]);
+
+			if (CurrentPlayerTurn == 1 && ThisPS->GetPlayerName() == "P1" ||
+				CurrentPlayerTurn == 2 && ThisPS->GetPlayerName() == "P2" ||
+				CurrentPlayerTurn == 3 && ThisPS->GetPlayerName() == "P3" ||
+				CurrentPlayerTurn == 4 && ThisPS->GetPlayerName() == "P4")
+			{
+				if (ThisPS->ReturnIsDuelWinner())
+				{ BringInDuelWinCards = true; }
+				else
+				{ ThisPS->UpdatePlayerScore(-2); }
+			}
+			else
+			{
+				if (ThisPS->ReturnIsDuelWinner())
+				{ ThisPS->UpdatePlayerScore(2); }
+			}
+		}
+
+		if (!BringInDuelWinCards)
+		{ NextTurnInOrder(); }
+	}
+	else
+	{
+		//allow a delay for the board to reset and replicate before moving the next player's turn
+		FTimerHandle THandle_PostMinigameNextTurn;
+		GetWorldTimerManager().SetTimer(THandle_PostMinigameNextTurn, this, &ASBoardGS::NextTurnInOrder, 8.0f, false);
+	}
 }
 
 //assign the pawns, colors, and turn order information on the player state
@@ -591,6 +636,11 @@ void ASBoardGS::CurrentCardSetup()
 //spawn in the cards based on the player who's turn it currently is, then assign all their variables
 void ASBoardGS::CardSpawning_Implementation(const FString &C1, const FString &C2, const FString &C3, const FString &P1, const FString &P2, const FString &P3)
 {
+	TArray<AActor*> FoundCards;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ASCardSystem::StaticClass(), FoundCards);
+	for (int i = 0; i < FoundCards.Num(); ++i)
+	{ FoundCards[i]->Destroy(); }
+
 	//ensure that the bool to check if a player is using a wormhole space is reset
 	if(GetWorld()->IsServer())
 	{ IsOnWormhole = false; }
@@ -674,6 +724,108 @@ void ASBoardGS::CardSpawning_Implementation(const FString &C1, const FString &C2
 	}
 }
 
+void ASBoardGS::SpawnDuelWinCards_Implementation()
+{
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	APlayerCameraManager* CamManager = GetWorld()->GetFirstPlayerController()->PlayerCameraManager;
+	CamManager->GetCameraViewPoint(ViewLocation, ViewRotation);
+
+	//CamXAxis multiplier determines how far the cards spawn from the camera (FRONT/BACK)
+	//CamYAxis multiplier determines distance the cards are from each other (LEFT/RIGHT)
+	//CamZAxis multiplier determines how high the cards are in frame (UP/DOWN)
+	FVector CamXAxis = CamManager->GetActorForwardVector();
+	FVector CamYAxis = CamManager->GetActorRightVector();
+	FVector CamZAxis = CamManager->GetActorUpVector();
+
+	FVector CardLoc_1 = ViewLocation + (CamXAxis * 30.0f + CamYAxis * -10.0f + CamZAxis * -5.0f);
+	FVector CardLoc_2 = ViewLocation + (CamXAxis * 30.0f + CamYAxis * 0.0f + CamZAxis * -5.0f);
+	FVector CardLoc_3 = ViewLocation + (CamXAxis * 30.0f + CamYAxis * 10.0f + CamZAxis * -5.0f);
+	FVector CardLoc_4 = ViewLocation + (CamXAxis * 30.0f + CamYAxis * -10.0f + CamZAxis * -15.0f);
+	FVector CardLoc_5 = ViewLocation + (CamXAxis * 30.0f + CamYAxis * 0.0f + CamZAxis * -15.0f);
+	FVector CardLoc_6 = ViewLocation + (CamXAxis * 30.0f + CamYAxis * 10.0f + CamZAxis * -15.0f);
+
+	//FRotator has its vector with Pitch (Y), Yaw (Z), and Roll (X)
+	FRotator CamBasedRotation = FRotator(0.0f, ViewRotation.Yaw - 90.0f, ViewRotation.Roll + 45.0f);
+
+	ASCardSystem* C_1 = Cast<ASCardSystem>(GetWorld()->SpawnActor<AActor>(CardSystemClass, CardLoc_1, CamBasedRotation));
+	ASCardSystem* C_2 = Cast<ASCardSystem>(GetWorld()->SpawnActor<AActor>(CardSystemClass, CardLoc_2, CamBasedRotation));
+	ASCardSystem* C_3 = Cast<ASCardSystem>(GetWorld()->SpawnActor<AActor>(CardSystemClass, CardLoc_3, CamBasedRotation));
+	ASCardSystem* C_4 = Cast<ASCardSystem>(GetWorld()->SpawnActor<AActor>(CardSystemClass, CardLoc_4, CamBasedRotation));
+	ASCardSystem* C_5 = Cast<ASCardSystem>(GetWorld()->SpawnActor<AActor>(CardSystemClass, CardLoc_5, CamBasedRotation));
+	ASCardSystem* C_6 = Cast<ASCardSystem>(GetWorld()->SpawnActor<AActor>(CardSystemClass, CardLoc_6, CamBasedRotation));
+
+	//set the different movement locations for the cards when interacted it the mouse
+	C_1->SetCenterScreen(ViewLocation + (CamXAxis * 20.0f));
+	C_2->SetCenterScreen(ViewLocation + (CamXAxis * 20.0f));
+	C_3->SetCenterScreen(ViewLocation + (CamXAxis * 20.0f));
+	C_4->SetCenterScreen(ViewLocation + (CamXAxis * 20.0f));
+	C_5->SetCenterScreen(ViewLocation + (CamXAxis * 20.0f));
+	C_6->SetCenterScreen(ViewLocation + (CamXAxis * 20.0f));
+
+	C_1->SetHoverLocation(ViewLocation + (CamXAxis * 20.0f + CamYAxis * -7.5f + CamZAxis * -7.5f));
+	C_2->SetHoverLocation(ViewLocation + (CamXAxis * 20.0f + CamYAxis * 0.0f + CamZAxis * -7.5f));
+	C_3->SetHoverLocation(ViewLocation + (CamXAxis * 20.0f + CamYAxis * 7.5f + CamZAxis * -7.5f));
+	C_4->SetHoverLocation(ViewLocation + (CamXAxis * 20.0f + CamYAxis * -7.5f + CamZAxis * -7.5f));
+	C_5->SetHoverLocation(ViewLocation + (CamXAxis * 20.0f + CamYAxis * 0.0f + CamZAxis * -7.5f));
+	C_6->SetHoverLocation(ViewLocation + (CamXAxis * 20.0f + CamYAxis * 7.5f + CamZAxis * -7.5f));
+
+	//set the current cards on the screen based on the current player's turn
+	C_1->SetCardString("1");
+	C_2->SetCardString("2");
+	C_3->SetCardString("3");
+	C_4->SetCardString("4");
+	C_5->SetCardString("5");
+	C_6->SetCardString("6");
+
+	//set the card's index based on its position on screen
+	C_1->SetCardIndex(1);
+	C_2->SetCardIndex(2);
+	C_3->SetCardIndex(3);
+	C_4->SetCardIndex(4);
+	C_5->SetCardIndex(5);
+	C_6->SetCardIndex(6);
+
+	//update the mesh of the cards based on their value
+	C_1->SetCardMesh();
+	C_2->SetCardMesh();
+	C_3->SetCardMesh();
+	C_4->SetCardMesh();
+	C_5->SetCardMesh();
+	C_6->SetCardMesh();
+
+	//the cards are too close to the camera and need to be scaled down
+	C_1->SetActorRelativeScale3D(C_1->GetActorRelativeScale3D() * 0.0125f);
+	C_2->SetActorRelativeScale3D(C_2->GetActorRelativeScale3D() * 0.0125f);
+	C_3->SetActorRelativeScale3D(C_3->GetActorRelativeScale3D() * 0.0125f);
+	C_4->SetActorRelativeScale3D(C_4->GetActorRelativeScale3D() * 0.0125f);
+	C_5->SetActorRelativeScale3D(C_5->GetActorRelativeScale3D() * 0.0125f);
+	C_6->SetActorRelativeScale3D(C_6->GetActorRelativeScale3D() * 0.0125f);
+
+	//set mouse interactability and pause ability only for the current player
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		APlayerController* PC = It->Get();
+		ASPlayerController* ThisPC = Cast<ASPlayerController>(PC);
+
+		if (CurrentPlayerTurn == 1 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P1" ||
+			CurrentPlayerTurn == 2 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P2" ||
+			CurrentPlayerTurn == 3 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P3" ||
+			CurrentPlayerTurn == 4 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P4")
+		{
+			ThisPC->SwitchInteractability(true);
+			ThisPC->SetAbleToBePaused(true);
+		}
+		else
+		{
+			ThisPC->SwitchInteractability(false);
+			ThisPC->SetAbleToBePaused(false);
+		}
+	}
+
+	BringInDuelWinCards = false;
+}
+
 //take the information from the selected/chosen card and replicate it to the same card on each client/server
 void ASBoardGS::ReplicateBoolToCards_Implementation(int CIndex, const FString& BoolToUpdate, bool SetStatus)
 {
@@ -692,7 +844,7 @@ void ASBoardGS::ReplicateBoolToCards_Implementation(int CIndex, const FString& B
 			if (BoolToUpdate == "HoverOff")
 			{ ThisCard->SetHoverOff(SetStatus); }
 			else if (BoolToUpdate == "HoverOn")
-			{ ThisCard->SetHoverOn(SetStatus); }
+			{ ThisCard->SetHoverOn(SetStatus); } 
 			else if (BoolToUpdate == "AbleToHover")
 			{ ThisCard->SetAbleToHover(SetStatus); }
 			else if (BoolToUpdate == "AdjustSpinSpeed")
@@ -706,14 +858,17 @@ void ASBoardGS::ReplicateBoolToCards_Implementation(int CIndex, const FString& B
 						APlayerController* PC = It->Get();
 						ASPlayerController* ThisPC = Cast<ASPlayerController>(PC);
 						
-						if (CurrentPlayerTurn == 1 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P1" ||
-							CurrentPlayerTurn == 2 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P2" ||
-							CurrentPlayerTurn == 3 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P3" ||
-							CurrentPlayerTurn == 4 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P4")
+						if (CIndex <= 3)
 						{
-							ThisPC->GetPlayerState<ASPlayerState>()->SetPlayerCards(ThisCard->ReturnCardIndex() - 1, CardRandomizer());
+							if (CurrentPlayerTurn == 1 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P1" ||
+								CurrentPlayerTurn == 2 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P2" ||
+								CurrentPlayerTurn == 3 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P3" ||
+								CurrentPlayerTurn == 4 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P4")
+							{
+								ThisPC->GetPlayerState<ASPlayerState>()->SetPlayerCards(ThisCard->ReturnCardIndex() - 1, CardRandomizer());
+							}
 						}
-
+						
 						ThisPC->SwitchInteractability(false);
 						ThisPC->SetAbleToBePaused(false);
 					}
@@ -1030,9 +1185,22 @@ void ASBoardGS::UpdateTurnWidgetOnPC()
 		}
 	}
 
-	//bring up the cards of the player who's turn it currently is
 	FTimerHandle THandle_CardSetup;
-	GetWorldTimerManager().SetTimer(THandle_CardSetup, this, &ASBoardGS::CurrentCardSetup, 2.0f, false);
+
+	if (!BringInDuelWinCards)
+	{
+		if (GetWorld()->IsServer())
+		{
+			//bring up the cards of the player who's turn it currently is
+			GetWorldTimerManager().SetTimer(THandle_CardSetup, this, &ASBoardGS::CurrentCardSetup, 2.0f, false);
+		}
+
+		BringInDuelWinCards = false;
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(THandle_CardSetup, this, &ASBoardGS::SpawnDuelWinCards, 2.0f, false);
+	}
 }
 
 //take action based on if a player has made their lane choice or is landing at their lane choice
@@ -1276,6 +1444,124 @@ void ASBoardGS::WormHoleMovement(APawn* PawnToMove, int LaneToMoveTo, int Curren
 		{
 			ThisPS->SetCurrentSpaceNum(NewSpaceNum);
 			ThisPS->SetPlayerLane(LaneToMoveTo);
+		}
+	}
+}
+
+//update the widget with the choices for the current player to duel
+void ASBoardGS::UpdateDuelWidget()
+{
+	FString PlayerChoice_1;
+	FString PlayerChoice_2;
+	FString PlayerChoice_3;
+
+	FLinearColor PlayerColor_1;
+	FLinearColor PlayerColor_2;
+	FLinearColor PlayerColor_3;
+
+	int Counter = 0;
+
+	for (int i = 0; i < PlayerArray.Num(); ++i)
+	{
+		ASPlayerState* ThisPS = Cast<ASPlayerState>(PlayerArray[i]);
+
+		ThisPS->SetIsDuelWinner(false);
+
+		if (CurrentPlayerTurn == 1 && ThisPS->GetPlayerName() == "P1" ||
+			CurrentPlayerTurn == 2 && ThisPS->GetPlayerName() == "P2" ||
+			CurrentPlayerTurn == 3 && ThisPS->GetPlayerName() == "P3" ||
+			CurrentPlayerTurn == 4 && ThisPS->GetPlayerName() == "P4"
+			)
+		{
+			continue;
+		}
+		else
+		{
+			if (Counter == 0)
+			{
+				PlayerChoice_1 = ThisPS->GetPlayerName();
+				PlayerColor_1 = ThisPS->ReturnPlayerColor();
+				++Counter;
+			}
+			else if (Counter == 1)
+			{
+				PlayerChoice_2 = ThisPS->GetPlayerName();
+				PlayerColor_2 = ThisPS->ReturnPlayerColor();
+				++Counter;
+			}
+			else if (Counter == 2)
+			{
+				PlayerChoice_3 = ThisPS->GetPlayerName();
+				PlayerColor_3 = ThisPS->ReturnPlayerColor();
+				++Counter;
+			}
+		}
+	}
+
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		//grab the controller and cast it to the custom PC
+		APlayerController* PC = It->Get();
+		ASPlayerController* ThisPC = Cast<ASPlayerController>(PC);
+
+		if (CurrentPlayerTurn == 1 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P1" ||
+			CurrentPlayerTurn == 2 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P2" ||
+			CurrentPlayerTurn == 3 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P3" ||
+			CurrentPlayerTurn == 4 && ThisPC->GetPlayerState<ASPlayerState>()->GetPlayerName() == "P4"
+			)
+		{
+			ThisPC->SwitchInteractability(true);
+		}
+
+		ThisPC->AddPlayersToDuelWidget(PlayerChoice_1, PlayerColor_1, PlayerChoice_2, PlayerColor_2, PlayerChoice_3, PlayerColor_3);
+	}
+}
+
+//update the players involved in the due and prep to move to duel level
+void ASBoardGS::UpdateDuelChoices(FString Choice1, FString Choice2)
+{
+	for (int i = 0; i < PlayerArray.Num(); ++i)
+	{
+		ASPlayerState* ThisPS = Cast<ASPlayerState>(PlayerArray[i]);
+
+		if (ThisPS->GetPlayerName() == Choice1 || ThisPS->GetPlayerName() == Choice2)
+		{ ThisPS->SetIsInDuel(true); }
+	}
+
+	RemoveClientWidgets();
+
+	ABoardGM* ThisGM = GetWorld()->GetAuthGameMode<ABoardGM>();
+	FTimerHandle THandle_DuelTravel;
+	GetWorldTimerManager().SetTimer(THandle_DuelTravel, ThisGM, &ABoardGM::MoveToDuel, 0.5f, false);
+}
+
+//remove all widgets from viewport
+void ASBoardGS::RemoveClientWidgets_Implementation()
+{
+	for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+	{
+		//grab the controller and cast it to the custom PC
+		APlayerController* PC = It->Get();
+		ASPlayerController* ThisPC = Cast<ASPlayerController>(PC);
+
+		ThisPC->RemoveAllWidgets();
+	}
+}
+
+//set the pawn's board space and lane number to the first dump space
+void ASBoardGS::SetPawnAtDump()
+{
+	for (int i = 0; i < PlayerArray.Num(); ++i)
+	{
+		ASPlayerState* ThisPS = Cast<ASPlayerState>(PlayerArray[i]);
+
+		if (CurrentPlayerTurn == 1 && ThisPS->GetPlayerName() == "P1" ||
+			CurrentPlayerTurn == 2 && ThisPS->GetPlayerName() == "P2" || 
+			CurrentPlayerTurn == 3 && ThisPS->GetPlayerName() == "P3" || 
+			CurrentPlayerTurn == 4 && ThisPS->GetPlayerName() == "P4")
+		{
+			ThisPS->SetPlayerLane(0);
+			ThisPS->SetCurrentSpaceNum(0);
 		}
 	}
 }

@@ -14,6 +14,7 @@
 #include "SBoardGS.h"
 #include "InGameWidget.h"
 #include "SCardSystem.h"
+#include "SDuelChoice.h"
 #include "SPlayerPawn.h"
 #include "SPlayerState.h"
 #include "SScoreWidget.h"
@@ -202,6 +203,15 @@ void ASPlayerController::FindScreenEdgeLocationForWorldLocation(UObject* WorldCo
 //create the WidgetManager for switching between widgets on the board state
 void ASPlayerController::CreateManagerWidget_Implementation(const TArray<FLinearColor>& WidgetColors)
 {
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), FoundWidgets, UUserWidget::StaticClass());
+
+	if (FoundWidgets.Num() > 0)
+	{
+		for (int i = 0; i < FoundWidgets.Num(); ++i)
+		{ FoundWidgets[i]->RemoveFromViewport(); }
+	}
+
 	//Create the manager widget and store the widget at index 0
 	if (!ensure(ManagerClass != nullptr)) return;
 	ManagerWidget = CreateWidget<UWidgetManager>(this, ManagerClass);
@@ -216,11 +226,26 @@ void ASPlayerController::CreateManagerWidget_Implementation(const TArray<FLinear
 	ScoreWidget->UpdatePlayerColors(WidgetColors);
 
 	//if the returning from a minigame, set the InGameWiget
-	if (GetWorld()->GetGameState<ASBoardGS>()->ReturnPostMinigame())
+	if (GetWorld()->GetGameState<ASBoardGS>()->ReturnPostMinigame() || GetWorld()->GetGameState<ASBoardGS>()->ReturnPostDuel())
 	{ ManagerWidget->SwitchWidgets(1); }
 	//if not returning from a minigame, it is the start so set the SunWidget
 	else
 	{ ManagerWidget->SwitchWidgets(3); }
+}
+
+//remove all active widgets from the viewport
+void ASPlayerController::RemoveAllWidgets_Implementation()
+{
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), FoundWidgets, UUserWidget::StaticClass());
+
+	if (FoundWidgets.Num() > 0)
+	{
+		for (int i = 0; i < FoundWidgets.Num(); ++i)
+		{
+			FoundWidgets[i]->RemoveFromViewport();
+		}
+	}
 }
 
 //at the end of a player's movement, update the widget with the current player turn and change in turn order
@@ -346,6 +371,21 @@ void ASPlayerController::UpdateScoreFromGamblerSpace_Implementation(int AmountTo
 	}
 }
 
+//update widget text with text/color of duel choices
+void ASPlayerController::AddPlayersToDuelWidget_Implementation(const FString& B1, FLinearColor C1, const FString& B2, FLinearColor C2, const FString& B3, FLinearColor C3)
+{
+	TArray<UUserWidget*> FoundWidgets;
+	UWidgetBlueprintLibrary::GetAllWidgetsOfClass(GetWorld(), FoundWidgets, UUserWidget::StaticClass());
+
+	UWidgetManager* TheManager = Cast<UWidgetManager>(FoundWidgets[0]);
+
+	TheManager->SwitchWidgets(6);
+
+	DuelWidget = Cast<USDuelChoice>(TheManager->SwitchReturn());
+
+	DuelWidget->SetDuelOptions(B1, C1, B2, C2, B3, C3);
+}
+
 //The following methods are used to call Server functions from client computers
 void ASPlayerController::SunWidgetCompleted_Implementation()
 { GetWorld()->GetGameState<ASBoardGS>()->NextOnSunWidget(); }
@@ -357,10 +397,19 @@ void ASPlayerController::UpdateLaneChoiceOnGS_Implementation()
 { GetWorld()->GetGameState<ASBoardGS>()->LaneChoice(true); }
 
 void ASPlayerController::PassMouseInputToGS_Implementation(int CardIndex, const FString &BoolToPass, bool WhatStatus)
-{ Cast<ASBoardGS>(GetWorld()->GetGameState())->ReplicateBoolToCards(CardIndex, BoolToPass, WhatStatus); }
+{ GetWorld()->GetGameState<ASBoardGS>()->ReplicateBoolToCards(CardIndex, BoolToPass, WhatStatus); }
 
 void ASPlayerController::SunScalePassToGS_Implementation()
-{ Cast<ASBoardGS>(GetWorld()->GetGameState())->UpdateNovaSun(); }
+{ GetWorld()->GetGameState<ASBoardGS>()->UpdateNovaSun(); }
 
 void ASPlayerController::TOCardChosen_Implementation(const FString& ChosenCard)
-{ Cast<ASBoardGS>(GetWorld()->GetGameState())->TOCardChosen(ChosenCard, GetPlayerState<ASPlayerState>()->GetPlayerName()); }
+{ GetWorld()->GetGameState<ASBoardGS>()->TOCardChosen(ChosenCard, GetPlayerState<ASPlayerState>()->GetPlayerName()); }
+
+void ASPlayerController::CallDuelUpdate_Implementation()
+{ GetWorld()->GetGameState<ASBoardGS>()->UpdateDuelWidget(); }
+
+void ASPlayerController::DuelChoicesPassToGS_Implementation(const FString& Choice1, const FString& Choice2)
+{ GetWorld()->GetGameState<ASBoardGS>()->UpdateDuelChoices(Choice1, Choice2); }
+
+void ASPlayerController::SetPlayerToDumpSpace_Implementation()
+{ GetWorld()->GetGameState<ASBoardGS>()->SetPawnAtDump(); }

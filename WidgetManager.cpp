@@ -13,6 +13,7 @@ void UWidgetManager::SwitchWidgets(int WidgetToSwitchTo)
 	*	3 = SunWidget
 	*	4 = WinScreenWidget
 	*	5 = WormholeWidget
+	*	6 = DuelWidget
 	*/
 
 	WidgetSwitch->SetActiveWidgetIndex(WidgetToSwitchTo);

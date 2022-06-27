@@ -34,6 +34,9 @@ void ASPlayerState::GetLifetimeReplicatedProps(TArray <FLifetimeProperty>& OutLi
 	DOREPLIFETIME(ASPlayerState, IsMyTurn);
 	DOREPLIFETIME(ASPlayerState, NumOfTurns);
 	DOREPLIFETIME(ASPlayerState, PlayerTurnNum);
+	DOREPLIFETIME(ASPlayerState, IsInDuel);
+	DOREPLIFETIME(ASPlayerState, IsDuelWinner);
+	DOREPLIFETIME(ASPlayerState, PlayerColor);
 }
 
 //store properties to be maintained during Seamless Travel
@@ -55,6 +58,8 @@ void ASPlayerState::CopyProperties(APlayerState* PlayerState)
 			CustomPS->IsMyTurn = IsMyTurn;
 			CustomPS->NumOfTurns = NumOfTurns;
 			CustomPS->PlayerTurnNum = PlayerTurnNum;
+			CustomPS->IsInDuel = IsInDuel;
+			CustomPS->IsDuelWinner = IsDuelWinner;
 		}
 	}
 }
@@ -78,6 +83,8 @@ void ASPlayerState::OverrideWith(APlayerState* PlayerState)
 			IsMyTurn = CustomPS->IsMyTurn;
 			NumOfTurns = CustomPS->NumOfTurns;
 			PlayerTurnNum = CustomPS->PlayerTurnNum;
+			IsInDuel = CustomPS->IsInDuel;
+			IsDuelWinner = CustomPS->IsDuelWinner;
 		}
 	}
 }
@@ -144,4 +151,6 @@ void ASPlayerState::AssignPlayerSpace()
 			GetWorldTimerManager().SetTimer(THandle_TurnWidget, ThisGS, &ASBoardGS::UpdateTurnWidgetOnPC, 6.0f, false);
 		}
 	}
+
+	IsInDuel = false;
 }

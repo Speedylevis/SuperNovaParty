@@ -8,6 +8,7 @@
 
 //CLASS HEADERS
 #include "SBoardGS.h"
+#include "SPlayerController.h"
 #include "SPlayerPawn.h"
 #include "SPlayerState.h"
 
@@ -138,21 +139,25 @@ void ASSpace::AssignPlayerToSpace(APawn* PawnToSet)
 	ThisPawn->SetCurrentSpace(this);
 	if (PawnCount == 0)
 	{
+		OrbitingPlayer = ThisPawn;
 		ThisPawn->SetActorLocation(GetTransitionPointA());
 		PawnCount++;
 	}
 	else if (PawnCount == 1)
 	{
+		OrbitingPlayer = ThisPawn;
 		ThisPawn->SetActorLocation(GetTransitionPointB());
 		PawnCount++;
 	}
 	else if (PawnCount == 2)
 	{
+		OrbitingPlayer = ThisPawn;
 		ThisPawn->SetActorLocation(GetTransitionPointC());
 		PawnCount++;
 	}
 	else if (PawnCount == 3)
 	{
+		OrbitingPlayer = ThisPawn;
 		ThisPawn->SetActorLocation(GetTransitionPointD());
 		PawnCount++;
 	}
@@ -221,6 +226,12 @@ void ASSpace::DumpPlayer()
 		DumpedPlayer->SetCurrentSpace(DumpingSpace);
 		DumpedPlayer->SetActorLocation(ThisDumpSpace->GetTransitionPointA());
 		ThisDumpSpace->SetOrbitingPlayer(DumpedPlayer);
+
+		GetWorld()->GetFirstPlayerController<ASPlayerController>()->SetPlayerToDumpSpace();
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(4812, 20.0f, FColor::Cyan, "Dump Space broken");
 	}
 }
 

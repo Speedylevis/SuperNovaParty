@@ -3,9 +3,6 @@
 
 #include "SGambleWidget.h"
 
-//ENGINE HEADERS
-#include "Kismet/GameplayStatics.h"
-
 //CLASS HEADERS
 #include "SBoardGS.h"
 #include "SPlayerController.h"

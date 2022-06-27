@@ -3,17 +3,28 @@
 
 #include "SDuelSpace.h"
 
+//ENGINE HEADERS
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Net/UnrealNetwork.h"
+
+//CLASS HEADERS
+#include "BoardGM.h"
+#include "SPlayerController.h"
+
 ASDuelSpace::ASDuelSpace()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
 	//create the scene components for the actor
-	RootComp = CreateDefaultSubobject<USceneComponent>(TEXT("Scene"));
-	RootComponent = RootComp;
+	SecondSceneComp = CreateDefaultSubobject<USceneComponent>(TEXT("Scene"));
+	SecondSceneComp->SetupAttachment(RootComponent);
 
-	ShipMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipMesh_1"));
-	ShipMesh->SetupAttachment(RootComp);
+	ShipMeshComp = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ShipMesh"));
+	ShipMeshComp->SetupAttachment(SecondSceneComp);
+
+	ConstructorHelpers::FObjectFinder<UStaticMesh> DuelShipMesh(TEXT("/Game/Meshes/Spaces/DuelSpace"));
+	ShipMesh = DuelShipMesh.Object;
 
 	//access and assign the materials from their location in the folder
 	ConstructorHelpers::FObjectFinder<UMaterialInstance> Neon_B_Class(TEXT("/Game/Materials/Neon/Neon_Player_Ship_Blue"));
@@ -39,11 +50,19 @@ ASDuelSpace::ASDuelSpace()
 	AluminumArray.SetNum(4);
 }
 
+void ASDuelSpace::GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(ASDuelSpace, ColorToSet_1);
+	DOREPLIFETIME(ASDuelSpace, ColorToSet_2);
+}
+
 void ASDuelSpace::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ShipMesh->GetStaticMesh();
+	ShipMeshComp->SetStaticMesh(ShipMesh);
 
 	NeonArray[0] = Neon_B;
 	NeonArray[1] = Neon_G;
@@ -69,10 +88,11 @@ void ASDuelSpace::Tick(float DeltaTime)
 }
 
 //TBD: have current player pick an opponent and move them to a 2player minigame
-void ASDuelSpace::Duel()
+void ASDuelSpace::Duel_Implementation()
 {
 	bIsActive = false;
-	NextTurn();
+	
+	GetWorld()->GetFirstPlayerController<ASPlayerController>()->CallDuelUpdate();
 }
 
 //randomize the two integers used for changing the colors of the ships of this space
@@ -99,33 +119,33 @@ void ASDuelSpace::AssignRandomColorNumber()
 			ColorToSet_1 = FirstRandomNumber;
 			ColorToSet_2 = SecondRandomNumber;
 
-			SwitchColor();
+			FTimerHandle THandle_SetColor;
+			GetWorldTimerManager().SetTimer(THandle_SetColor, this, &ASDuelSpace::SwitchColor, 1.0f, false);
 		}
 	}
 }
 
 //set the materials based on the new color integers
-void ASDuelSpace::SwitchColor()
+void ASDuelSpace::SwitchColor_Implementation()
 {
-	if (GetWorld()->IsServer())
+	for (int i = 1; i < 5; ++i)
 	{
-		for (int i = 1; i < 5; ++i)
+		if (ColorToSet_1 == i)
 		{
-			if (ColorToSet_1 == i)
-			{
-				ShipMesh->SetMaterial(2, NeonArray[i - 1]);
-				ShipMesh->SetMaterial(3, AluminumArray[i - 1]);
-			}
-
-			if (ColorToSet_2 == i)
-			{
-				ShipMesh->SetMaterial(4, NeonArray[i - 1]);
-				ShipMesh->SetMaterial(5, AluminumArray[i - 1]);
-			}
+			ShipMesh->SetMaterial(2, NeonArray[i - 1]);
+			ShipMesh->SetMaterial(3, AluminumArray[i - 1]);
 		}
 
-		//after a preset time, change the colors again
-		FTimerHandle THandle_AssignColorNum;
-		GetWorldTimerManager().SetTimer(THandle_AssignColorNum, this, &ASDuelSpace::AssignRandomColorNumber, ColorSwitchSpeed, false);
+		if (ColorToSet_2 == i)
+		{
+			ShipMesh->SetMaterial(4, NeonArray[i - 1]);
+			ShipMesh->SetMaterial(5, AluminumArray[i - 1]);
+		}
 	}
+
+	ShipMeshComp->SetStaticMesh(ShipMesh);
+
+	//after a preset time, change the colors again
+	FTimerHandle THandle_AssignColorNum;
+	GetWorldTimerManager().SetTimer(THandle_AssignColorNum, this, &ASDuelSpace::AssignRandomColorNumber, 1.0f, false);
 }
